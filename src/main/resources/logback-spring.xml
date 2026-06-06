@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 🔒 FILE APPENDER: Все логи идут только сюда -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>kb-service.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>kb-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>100MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- 🚫 NO CONSOLE APPENDER: stdout/stderr остаются чистыми для MCP JSON-RPC -->
+
+    <root level="INFO">
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 🔍 DEBUG MCP & Spring AI для диагностики разрыва соединения -->
+    <logger name="org.springframework.ai.mcp" level="DEBUG" />
+    <logger name="io.modelcontextprotocol.sdk" level="DEBUG" />
+    <logger name="io.modelcontextprotocol.spec" level="DEBUG" />
+    <logger name="com.combasoft.ai.mcp.kb" level="DEBUG" />
+</configuration>

@@ -1,0 +1,56 @@
+server:
+  port: 8095
+
+spring:
+  main:
+    banner-mode: OFF
+  application:
+    name: kb-service
+  ai:
+    mcp:
+      server:
+        stdio: true
+        type: SYNC
+        name: kb-mcp-server
+        version: 1.0.0
+        annotation-scanner:
+          enabled: true
+    model:
+      embedding: openai
+    openai:
+      # 🔑 Отключаем чат, чтобы избежать ошибки авто-конфигурации
+      chat:
+        enabled: false
+      # Включаем эмбеддинги (по умолчанию true, но явно укажем)
+      embedding:
+        enabled: true
+        base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:1234}
+        model: ${EMBEDDING_MODEL:text-embedding-qwen3-embedding-0.6b}
+        options:
+          dimensions: ${EMBEDDING_DIMENSIONS:1024}
+      # Базовый URL и ключ (для LM Studio ключ не важен)
+      base-url: ${OPENAI_BASE_URL:http://127.0.0.1:1234/v1}
+      api-key: ${OPENAI_API_KEY:not-needed}
+    vectorstore:
+      qdrant:
+        port: 6334
+        host: 127.0.0.1
+        collection-name: kb_documents
+        use-tls: false
+        api-key: my-api-key
+        initializeSchema: true
+
+kb:
+  chunk-size: 512
+  chunk-overlap: 50
+
+  similarity-threshold: ${SIMILARITY_THRESHOLD:0.15}
+  max-search-results: 10
+  allowed-source-types: file,web,manual
+
+logging:
+  level:
+    org.springframework.web.client: DEBUG
+    org.springframework.http: DEBUG
+    org.springframework.ai: DEBUG
+    com.combasoft.ai.mcp.kb: DEBUG
