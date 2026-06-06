@@ -1,20 +1,17 @@
 package com.combasoft.ai.mcp.kb.service;
 
-
-
 import com.combasoft.ai.mcp.kb.config.KbConfig;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Service;
-
+import com.combasoft.ai.mcp.kb.service.reranking.Reranker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Service;
 
 import java.util.*;
-
+import java.util.stream.Collectors;
 
 @Service
 public class SearchService {
@@ -23,84 +20,100 @@ public class SearchService {
 
     private final VectorStore vectorStore;
     private final KbConfig kbConfig;
+    private final Reranker reranker;
 
-    public SearchService(@Qualifier("kbVectorStore") VectorStore vectorStore, KbConfig kbConfig) {
+    public SearchService(@Qualifier("kbVectorStore") VectorStore vectorStore,
+                         KbConfig kbConfig,
+                         Reranker reranker) {
         this.vectorStore = vectorStore;
         this.kbConfig = kbConfig;
+        this.reranker = reranker;
     }
-    /**
-     * Выполняет семантический поиск с фильтрами.
-     *
-     * @param query         Поисковый запрос
-     * @param limit         Максимальное количество результатов (0 = значение из конфига)
-     * @param sourceFilter  Абсолютный путь к файлу (если нужно искать только внутри конкретного документа)
-     * @param otherFilters  Дополнительные метаданные для фильтрации
-     */
+
     public List<SearchResult> search(String query, int limit, String sourceFilter, Map<String, Object> otherFilters) {
-
         int topK = (limit > 0) ? limit : kbConfig.getMaxSearchResults();
+        int multiplier = kbConfig.getRetrievalMultiplier();
+        int childTopK = topK * multiplier;
 
-        // 🛡️ Сборка выражения фильтра
         List<String> conditions = new ArrayList<>();
+        conditions.add("is_parent == false");
 
-        // 1. Фильтр по исходному файлу (source)
         if (sourceFilter != null && !sourceFilter.isBlank()) {
-            // Важно: путь должен быть экранирован или точен, если в Qdrant записан normalized path
             conditions.add(String.format("metadata['source'] == '%s'", sourceFilter));
         }
-
-        // 2. Дополнительные фильтры
         if (otherFilters != null && !otherFilters.isEmpty()) {
             otherFilters.forEach((k, v) ->
                     conditions.add(String.format("metadata['%s'] == '%s'", k, v))
             );
         }
 
-        String filterExpr = "";
+        String filterExpr = String.join(" AND ", conditions);
 
-        // 3. Применяем фильтр только если он не пустой (защита от "Expression should not be empty!")
-        if (!conditions.isEmpty()) {
-            filterExpr = String.join(" AND ", conditions);
-            log.debug("🔍 Applying Qdrant filter: {}", filterExpr);
+        SearchRequest request = SearchRequest.builder()
+                .query(query)
+                .topK(childTopK)
+                .similarityThreshold(kbConfig.getSimilarityThreshold())
+                .filterExpression(filterExpr)
+                .build();
+
+        log.info("📡 Searching CHILDREN: query='{}', topK={}", query, childTopK);
+        List<Document> children = vectorStore.similaritySearch(request);
+
+        if (children.isEmpty()) {
+            return List.of();
         }
 
-        SearchRequest request;
+        // Дедупликация по parent_id с сохранением порядка релевантности
+        Map<String, Document> uniqueParentsMap = children.stream()
+                .collect(Collectors.toMap(
+                        doc -> (String) doc.getMetadata().get("parent_id"),
+                        doc -> doc,
+                        (existing, replacement) -> existing,
+                        LinkedHashMap::new
+                ));
 
-        if(!filterExpr.isBlank()) {
-            request = SearchRequest.builder()
-                    .query(query)
-                    .topK(limit > 0 ? limit : kbConfig.getMaxSearchResults())
-                    .similarityThreshold(kbConfig.getSimilarityThreshold())
-                    .filterExpression(filterExpr)
-                    .build();
-        } else {
-            request = SearchRequest.builder()
-                    .query(query)
-                    .topK(limit > 0 ? limit : kbConfig.getMaxSearchResults())
-                    .similarityThreshold(kbConfig.getSimilarityThreshold())
-                    .build();
-        }
-
-
-        log.info("📡 Executing similaritySearch: query='{}', topK={}, filters={}",
-                query, topK, conditions.isEmpty() ? "none" : conditions.size());
-
-        // 4. Выполнение запроса
-        List<Document> rawResults = vectorStore.similaritySearch(request);
-
-        // 5. Логирование для отладки релевантности
-        log.debug("🔍 Raw results count: {}", rawResults.size());
-
-        return rawResults.stream()
-                .map(doc -> new SearchResult(doc.getId(), doc.getText(), doc.getScore(), doc.getMetadata()))
-                // Сортировка по убыванию релевантности (Qdrant обычно возвращает уже отсортированным, но подстрахуемся)
-                .sorted(Comparator.comparing(SearchResult::score).reversed())
+        // Берем топ-K уникальных родителей для реранкинга
+        List<Document> topParents = uniqueParentsMap.values().stream()
+                .limit(topK)
                 .toList();
+
+        List<SearchResult> initialResults = topParents.stream()
+                .map(doc -> {
+                    String parentText = (String) doc.getMetadata().get("parent_text");
+                    String finalText = (parentText != null && !parentText.isBlank()) ? parentText : doc.getText();
+                    return new SearchResult(
+                            (String) doc.getMetadata().get("parent_id"),
+                            finalText,
+                            doc.getScore(),
+                            doc.getMetadata()
+                    );
+                })
+                .toList();
+
+        if (initialResults.isEmpty()) {
+            return List.of();
+        }
+
+        // 🔑 Применяем LLM Reranking
+        List<String> parentTexts = initialResults.stream().map(SearchResult::content).toList();
+        List<Double> rerankScores = reranker.score(query, parentTexts);
+
+        List<SearchResult> rerankedResults = new ArrayList<>();
+        for (int i = 0; i < initialResults.size(); i++) {
+            rerankedResults.add(new SearchResult(
+                    initialResults.get(i).id(),
+                    initialResults.get(i).content(),
+                    rerankScores.get(i), // Новая оценка от LLM
+                    initialResults.get(i).metadata()
+            ));
+        }
+
+        // Финальная сортировка по убыванию оценки LLM
+        return rerankedResults.stream()
+                .sorted(Comparator.comparing(SearchResult::score).reversed())
+                .toList(); // topK уже применен выше, здесь просто сортируем
     }
 
-    /**
-     * Record для удобного возврата результатов.
-     */
     public record SearchResult(
             String id,
             String content,

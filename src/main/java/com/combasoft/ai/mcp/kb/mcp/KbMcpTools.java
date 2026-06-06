@@ -66,7 +66,7 @@ public class KbMcpTools {
 
     @McpTool(description = "Searches the ENTIRE knowledge base for relevant information.")
     public String searchKnowledge(@McpToolParam(description = "Search query") String query,
-                                  @McpToolParam(description = "Max results (default 5)") int limit) {
+                                  @McpToolParam(description = "Max results (default 5) Size of each result is 1024") int limit) {
         return formatSearchResults(searchService.search(query, limit, null, Map.of()));
     }
 
@@ -74,7 +74,7 @@ public class KbMcpTools {
     public String searchInDocument(
             @McpToolParam(description = "Search query") String query,
             @McpToolParam(description = "Absolute path to the source document") String sourcePath,
-            @McpToolParam(description = "Max results (default 5)") int limit) {
+            @McpToolParam(description = "Max results (default 5) Size of each result is 1024") int limit) {
         try {
             String absolutePath = java.nio.file.Path.of(sourcePath).toAbsolutePath().toString();
             return formatSearchResults(searchService.search(query, limit, absolutePath, Map.of()));

@@ -42,12 +42,28 @@ spring:
         initializeSchema: true
 
 kb:
+  # --- Стратегия Parent-Child Chunking
+  parent-chunk-size: 1024  # Размер большого куска для контекста LLM (в токенах)
+  child-chunk-size: 256    # Размер маленького куска для точного векторного поиска
   chunk-size: 512
-  chunk-overlap: 50
-  max-file-size-mb: 50
+  chunk-overlap: 50        # Перекрытие чанков
+
+  # --- Параметры поиска ---
   similarity-threshold: ${SIMILARITY_THRESHOLD:0.35}
-  max-search-results: 128
+  max-search-results: 128          # Итоговое количество родителей, отдаваемых модели (N)
+  retrieval-multiplier: 10         # Во сколько раз больше детей искать (10 * 128 = 1280 детей)
+
+  # --- Ограничения ---
+  max-file-size-mb: 50
   allowed-source-types: file,web,manual
+
+  # --- Настройки LLM Reranker ---
+  reranker:
+    enabled: true
+    # Должно совпадать с spring.ai.openai.chat.options.model
+    model: "qwen3-reranker-0.6b"
+    # Максимум документов для оценки за один запрос к LLM (защита от перегрузки контекста)
+    max-docs-to-rerank: 20
 
 logging:
   level:
