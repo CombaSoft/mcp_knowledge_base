@@ -35,6 +35,10 @@ public class QdrantConfig {
     @Value("${spring.ai.openai.embedding.base-url:http://127.0.0.1:1234}")
     String embeddingBaseUrl;
 
+    public String getCollectionName() {
+        return collectionName;
+    }
+
     /**
      * Явное создание VectorStore. Гарантирует, что коллекция создаётся с нужной размерностью.
      */

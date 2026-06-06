@@ -44,9 +44,9 @@ spring:
 kb:
   chunk-size: 512
   chunk-overlap: 50
-
-  similarity-threshold: ${SIMILARITY_THRESHOLD:0.15}
-  max-search-results: 10
+  max-file-size-mb: 50
+  similarity-threshold: ${SIMILARITY_THRESHOLD:0.35}
+  max-search-results: 128
   allowed-source-types: file,web,manual
 
 logging:

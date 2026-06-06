@@ -11,9 +11,10 @@ public class KbConfig {
 
     private int chunkSize = 512;
     private int chunkOverlap = 50;
-    private double similarityThreshold = 0.75;
-    private int maxSearchResults = 10;
+    private double similarityThreshold = 0.35;
+    private int maxSearchResults = 128;
     private List<String> allowedSourceTypes = List.of("file", "web", "manual");
+    private int maxFileSizeMb = 50;
 
     public int getChunkSize() { return chunkSize; }
     public void setChunkSize(int chunkSize) { this.chunkSize = chunkSize; }
@@ -25,4 +26,6 @@ public class KbConfig {
     public void setMaxSearchResults(int maxSearchResults) { this.maxSearchResults = maxSearchResults; }
     public List<String> getAllowedSourceTypes() { return allowedSourceTypes; }
     public void setAllowedSourceTypes(List<String> allowedSourceTypes) { this.allowedSourceTypes = allowedSourceTypes; }
+    public int getMaxFileSizeMb() { return maxFileSizeMb; }
+    public void setMaxFileSizeMb(int maxFileSizeMb) { this.maxFileSizeMb = maxFileSizeMb; }
 }
