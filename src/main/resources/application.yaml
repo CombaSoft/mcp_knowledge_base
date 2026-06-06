@@ -4,6 +4,7 @@ server:
 spring:
   main:
     banner-mode: OFF
+    web-application-type: servlet
   application:
     name: kb-service
   ai:
