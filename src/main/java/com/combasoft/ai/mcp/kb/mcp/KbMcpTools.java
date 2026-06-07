@@ -49,7 +49,8 @@ public class KbMcpTools {
     @McpTool(description = "Indexes a single file.")
     public String ingestFileAsync(@McpToolParam(description = "Absolute path to a single file") String path) {
         try {
-            String taskId = asyncIngestService.ingestDocumentAsync(path, Map.of("ingested_by", "mcp_agent"));
+            // 🔑 Заменяем ingestDocumentAsync на startIngestion
+            String taskId = asyncIngestService.startIngestion(path, Map.of("ingested_by", "mcp_agent"));
             return "✅ Task started. TaskId: " + taskId + ". Use getTaskStatus to check progress.";
         } catch (Exception e) {
             return "❌ Failed: " + e.getMessage();

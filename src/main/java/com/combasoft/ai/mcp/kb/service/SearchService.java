@@ -36,18 +36,21 @@ public class SearchService {
         int childTopK = topK * multiplier;
 
         List<String> conditions = new ArrayList<>();
-        conditions.add("is_parent == false");
+
+        conditions.add("is_parent == 'false'");
 
         if (sourceFilter != null && !sourceFilter.isBlank()) {
-            conditions.add(String.format("metadata['source'] == '%s'", sourceFilter));
+            conditions.add("source == '" + sourceFilter + "'");
         }
+
         if (otherFilters != null && !otherFilters.isEmpty()) {
             otherFilters.forEach((k, v) ->
-                    conditions.add(String.format("metadata['%s'] == '%s'", k, v))
+                    conditions.add(k + " == '" + v + "'")
             );
         }
 
         String filterExpr = String.join(" AND ", conditions);
+        log.debug("🔍 Applying Qdrant filter: {}", filterExpr);
 
         SearchRequest request = SearchRequest.builder()
                 .query(query)
@@ -56,6 +59,15 @@ public class SearchService {
                 .filterExpression(filterExpr)
                 .build();
 
+        /*
+        request = SearchRequest.builder()
+                .query(query)
+                .topK(limit > 0 ? limit : kbConfig.getMaxSearchResults())
+                .similarityThreshold(kbConfig.getSimilarityThreshold())
+                .build();
+
+
+         */
         log.info("📡 Searching CHILDREN: query='{}', topK={}", query, childTopK);
         List<Document> children = vectorStore.similaritySearch(request);
 

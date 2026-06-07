@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -37,7 +38,8 @@ public class KbController {
             if (path == null || path.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("status", "error", "message", "Path is required"));
             }
-            String taskId = asyncIngestService.ingestDocumentAsync(path, Map.of("ingested_by", "web_api"));
+            // 🔑 Заменяем ingestDocumentAsync на startIngestion
+            String taskId = asyncIngestService.startIngestion(path, Map.of("ingested_by", "web_api"));
             return ResponseEntity.accepted()
                     .body(Map.of("status", "queued", "taskId", taskId, "message", "Ingestion started"));
         } catch (IllegalArgumentException e) {

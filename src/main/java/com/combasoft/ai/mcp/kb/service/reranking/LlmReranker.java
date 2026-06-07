@@ -1,17 +1,20 @@
 package com.combasoft.ai.mcp.kb.service.reranking;
 
 import com.combasoft.ai.mcp.kb.config.KbConfig;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -19,15 +22,14 @@ import java.util.stream.IntStream;
 public class LlmReranker implements Reranker {
 
     private static final Logger log = LoggerFactory.getLogger(LlmReranker.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ChatClient chatClient;
     private final KbConfig kbConfig;
 
-    // 🔑 1. Record для отдельной оценки
+    // 🔑 Используем объект с индексом. Для 4B модели это надежнее, чем плоский массив,
+    // так как позволяет точно сопоставить оценку с документом, даже если модель пропустит один.
     public record ScoreResult(int index, double score) {}
-
-    // 🔑 2. Record-обёртка для списка (Spring AI любит объекты на корневом уровне JSON)
-    public record RerankResponse(List<ScoreResult> results) {}
 
     public LlmReranker(ChatClient.Builder chatClientBuilder, KbConfig kbConfig) {
         this.chatClient = chatClientBuilder.build();
@@ -45,66 +47,92 @@ public class LlmReranker implements Reranker {
 
         String documentsText = IntStream.range(0, docsToRerank.size())
                 .mapToObj(i -> String.format("[%d] %s", i, docsToRerank.get(i)))
-                .collect(Collectors.joining("\n\n"));
+                .collect(Collectors.joining("\n"));
 
-        // 🔑 3. Обновленный промпт: просим вернуть объект с ключом "results"
-        String promptText = """
-                You are an expert search relevance evaluator. 
-                Given a user query and a list of documents, evaluate the relevance of each document to the query on a scale from 0.0 (completely irrelevant) to 1.0 (perfectly answers the query).
+        // 🔑 ПРОФЕССИОНАЛЬНЫЙ ПРОМПТ ДЛЯ 4B МОДЕЛИ
+        String systemPrompt = """
+                You are a strict, deterministic search relevance evaluation engine. 
+                Your ONLY output must be a valid JSON array. 
+                Do not include ANY markdown formatting (like ```json), explanations, reasoning, or conversational text.
+                """;
+
+        String userPrompt = """
+                Evaluate the relevance of each provided document to the user's query on a scale from 0.0 (completely irrelevant) to 1.0 (perfect match).
                 
-                Return ONLY a valid JSON object with a single key "results", which is an array of objects. 
-                Each object in the array must have exactly two fields:
-                - "index": the original 0-based integer index of the document from the list below.
-                - "score": the relevance score as a double between 0.0 and 1.0.
-                
-                Do not include any markdown formatting (like ```json), explanations, or text outside the JSON object.
+                STRICT RULES:
+                1. Output MUST be a JSON array of objects.
+                2. Each object MUST have exactly two fields: "index" (integer, matching the document's bracketed number) and "score" (float, 0.0 to 1.0).
+                3. The array MUST contain exactly %d items, one for each document provided.
+                4. Start your response immediately with '[' and end with ']'.
                 
                 Query: "%s"
                 
                 Documents:
                 %s
-                """.formatted(query, documentsText);
+                """.formatted(docsToRerank.size(), query, documentsText);
 
         try {
-            // 🔑 4. Правильный конструктор: передаем ТОЛЬКО класс обёртки
-            var converter = new BeanOutputConverter<>(RerankResponse.class);
-
             ChatOptions options = OpenAiChatOptions.builder()
                     .model(kbConfig.getReranker().model())
-                    .temperature(0.1)
-                    .maxTokens(512) // Чуть увеличили, так как JSON с обёрткой чуть длиннее
+                    .temperature(0.1) // Низкая температура для детерминированного вывода
+                    .maxTokens(512)   // 4B модели нужно чуть больше места для корректного JSON, 512 более чем достаточно
                     .build();
 
-            // 🔑 5. Получаем сразу типизированный объект RerankResponse
-            RerankResponse response = chatClient.prompt()
-                    .user(promptText)
+            // 🔑 Используем разделение на system и user промпты
+            String rawResponse = chatClient.prompt()
+                    .system(systemPrompt)
+                    .user(userPrompt)
                     .options(options)
                     .call()
-                    .entity(converter);
+                    .content();
 
-            if (response == null || response.results() == null) {
-                throw new IllegalStateException("LLM returned null or empty results");
+            log.debug("🔍 RAW LLM Reranker Response:\n{}", rawResponse);
+
+            if (rawResponse == null || rawResponse.trim().isEmpty()) {
+                throw new IllegalStateException("LLM returned empty response");
             }
 
-            // Преобразуем результат в Map для быстрого поиска по индексу
-            Map<Integer, Double> scoreMap = response.results().stream()
+            // 🔑 Надежный парсер: вырезаем всё, кроме содержимого квадратных скобок
+            // Это страховка на случай, если модель всё же добавит ```json ... ```
+            Pattern pattern = Pattern.compile("\\[.*\\]", Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(rawResponse);
+
+            if (!matcher.find()) {
+                throw new IllegalStateException("No JSON array found in LLM response. Raw: " + rawResponse);
+            }
+
+            String cleanJsonArray = matcher.group();
+
+            // Парсим в список объектов ScoreResult
+            List<ScoreResult> results = objectMapper.readValue(
+                    cleanJsonArray,
+                    new TypeReference<List<ScoreResult>>() {}
+            );
+
+            if (results == null || results.isEmpty()) {
+                throw new IllegalStateException("Parsed results list is empty");
+            }
+
+            // Преобразуем в Map для безопасного сопоставления по индексу
+            Map<Integer, Double> scoreMap = results.stream()
                     .collect(Collectors.toMap(ScoreResult::index, ScoreResult::score));
 
-            // Формируем итоговый список оценок, сохраняя исходный порядок документов
             List<Double> finalScores = new ArrayList<>();
             for (int i = 0; i < documents.size(); i++) {
                 if (i < limit) {
-                    finalScores.add(scoreMap.getOrDefault(i, 0.1));
+                    // Берем оценку по индексу, или 0.1 если модель по ошибке пропустила этот индекс
+                    double score = scoreMap.getOrDefault(i, 0.1);
+                    finalScores.add(Math.max(0.0, Math.min(1.0, score)));
                 } else {
                     finalScores.add(0.1);
                 }
             }
 
-            log.debug("✅ LLM Reranker successfully scored {} documents", finalScores.size());
+            log.info("✅ LLM Reranker (4B) successfully scored {} documents", finalScores.size());
             return finalScores;
 
         } catch (Exception e) {
-            log.error("❌ LLM Reranker failed, falling back to original vector scores", e);
+            log.error("❌ LLM Reranker failed. Falling back to original vector scores. Error: {}", e.getMessage());
             return documents.stream().map(d -> 0.5).toList();
         }
     }

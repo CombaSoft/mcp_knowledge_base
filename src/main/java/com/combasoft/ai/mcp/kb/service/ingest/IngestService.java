@@ -5,7 +5,6 @@ import com.combasoft.ai.mcp.kb.parser.DocumentParserFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -20,16 +19,22 @@ public class IngestService {
     private static final Logger log = LoggerFactory.getLogger(IngestService.class);
     private static final List<Character> DEFAULT_PUNCTUATION_MARKS = List.of('.', '?', '!', '\n');
 
+    // Безопасный лимит в символах (примерно 750-1000 токенов, безопасно для любой модели эмбеддингов)
+    private static final int MAX_SAFE_CHAR_LENGTH = 3000;
+
     private final VectorStore vectorStore;
     private final KbConfig kbConfig;
     private final DocumentParserFactory parserFactory;
+    private final CustomTextSplitter customSplitter;
 
     public IngestService(@Qualifier("kbVectorStore") VectorStore vectorStore,
                          KbConfig kbConfig,
-                         DocumentParserFactory parserFactory) {
+                         DocumentParserFactory parserFactory,
+                         CustomTextSplitter customSplitter) {
         this.vectorStore = vectorStore;
         this.kbConfig = kbConfig;
         this.parserFactory = parserFactory;
+        this.customSplitter = customSplitter;
     }
 
     public void ingestSingleFileSync(String sourcePath, Map<String, Object> metadata) throws Exception {
@@ -59,44 +64,32 @@ public class IngestService {
             return List.of();
         }
 
-        Document rawDoc = new Document(content);
-
-        // 1. Создаем Parent chunks (большие куски для контекста LLM)
-        // Параметры: chunkSize, minChunkSizeChars, maxNumChunks, minChunkLengthChars, keepSeparator
-        TokenTextSplitter parentSplitter = new TokenTextSplitter(
-                kbConfig.getParentChunkSize(), 100, 10000,
-                5, true, DEFAULT_PUNCTUATION_MARKS
-        );
-        List<Document> parents = parentSplitter.apply(List.of(rawDoc));
-
-        // 2. Создаем Child chunks (маленькие куски для точного векторного поиска)
-        TokenTextSplitter childSplitter = new TokenTextSplitter(
-                kbConfig.getChildChunkSize(), 50, 10000,
-                5, true, DEFAULT_PUNCTUATION_MARKS
-        );
-
-        List<Document> allDocuments = new ArrayList<>();
         Map<String, Object> meta = new HashMap<>(baseMetadata);
         meta.put("source", filePath.toAbsolutePath().toString());
         meta.put("file_type", getFileExtension(filePath));
         meta.put("ingested_at", System.currentTimeMillis());
 
+        List<Document> allDocuments = new ArrayList<>();
+
+        // 🔑 Используем наш надежный кастомный сплиттер
+        // Parent: ~2000 символов (безопасно ~500-600 токенов), overlap 200
+        List<Document> parents = customSplitter.splitMy(content, kbConfig.getParentChunkSize(), 200, meta);
+
         for (Document parent : parents) {
-            String parentId = UUID.randomUUID().toString();
+            String parentId = parent.getId();
             String parentText = parent.getText();
 
-            // Разбиваем родителя на детей
-            List<Document> children = childSplitter.apply(List.of(parent));
+            // Child: ~500 символов (безопасно ~120-150 токенов), overlap 50
+            List<Document> children = customSplitter.splitMy(parentText, kbConfig.getChildChunkSize(), 50, meta);
 
             for (Document child : children) {
+                // Внутри цикла создания children в IngestService.java
                 Map<String, Object> childMeta = new HashMap<>(meta);
-
-                // 🔑 КЛЮЧЕВЫЕ ПОЛЯ ДЛЯ ПЛАНА Б:
                 childMeta.put("parent_id", parentId);
-                childMeta.put("is_parent", false); // Флаг, что это ребенок
 
-                // Сохраняем полный текст родителя прямо в метаданные ребенка!
-                // Это избавляет от необходимости делать второй запрос к Qdrant.
+                // 🔑 ИЗМЕНЕНИЕ: Используем строку "false" вместо булевого false
+                childMeta.put("is_parent", "false");
+
                 childMeta.put("parent_text", parentText);
                 childMeta.put("chunk_index", allDocuments.size());
 
