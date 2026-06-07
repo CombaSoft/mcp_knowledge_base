@@ -136,17 +136,22 @@ public class KbMcpTools {
         return response.toString();
     }
 
-    @McpTool(description = "Searches ONLY within a specific document (source path).")
-    public String searchInDocument(
-            @McpToolParam(description = "Search query") String query,
-            @McpToolParam(description = "Absolute path to the source document") String sourcePath,
-            @McpToolParam(description = "Max results (default 5) Size of each result is 1024") int limit) {
-        try {
-            String absolutePath = java.nio.file.Path.of(sourcePath).toAbsolutePath().toString();
-            return formatSearchResults(searchService.search(query, limit, absolutePath, Map.of()));
-        } catch (Exception e) {
-            return "❌ Error resolving path: " + e.getMessage();
-        }
+    @McpTool(name = "start_document_search", description = "Starts an asynchronous search within a SPECIFIC document. Use this when the user asks about a particular file. Returns a short taskId.")
+    public String startDocumentSearch(
+            @McpToolParam(description = "The user's search query") String query,
+            @McpToolParam(description = "Exact source path or filename of the document") String sourcePath,
+            @McpToolParam(description = "Maximum number of results (default 5)", required = false) Integer limit,
+            @McpToolParam(description = "Use LLM reranking. Set to FALSE for faster, CPU-friendly search (default: false)", required = false) Boolean useReranking) {
+
+        int topK = (limit != null && limit > 0) ? limit : 5;
+        // По умолчанию выключаем реранкинг, если агент явно не попросил обратного
+        boolean rerank = (useReranking != null) && useReranking;
+
+        String taskId = asyncSearchService.startSearchInDocument(query, sourcePath, topK, rerank);
+
+        String rerankStatus = rerank ? "with LLM reranking" : "without LLM reranking (fast)";
+        return String.format("DOC_SEARCH_STARTED. TaskId: %s. Target: %s. Mode: %s. IMPORTANT: Copy this TaskId exactly and use 'get_search_status' to check progress.",
+                taskId, sourcePath, rerankStatus);
     }
 
     @McpTool(description = "Deletes all indexed chunks for a specific file from the knowledge base.")
