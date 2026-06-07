@@ -4,6 +4,7 @@ server:
 spring:
   main:
     banner-mode: OFF
+    web-application-type: servlet
   application:
     name: kb-service
   ai:
@@ -21,15 +22,16 @@ spring:
       # 🔑 Отключаем чат, чтобы избежать ошибки авто-конфигурации
       chat:
         enabled: false
+        base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:1234}
       # Включаем эмбеддинги (по умолчанию true, но явно укажем)
       embedding:
         enabled: true
         base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:1234}
-        model: ${EMBEDDING_MODEL:text-embedding-qwen3-embedding-0.6b}
+        model: ${EMBEDDING_MODEL:text-embedding-embeddinggemma-300m-qat}
         options:
-          dimensions: ${EMBEDDING_DIMENSIONS:1024}
+          dimensions: ${EMBEDDING_DIMENSIONS:768}
       # Базовый URL и ключ (для LM Studio ключ не важен)
-      base-url: ${OPENAI_BASE_URL:http://127.0.0.1:1234/v1}
+      base-url: ${OPENAI_BASE_URL:http://127.0.0.1:1234}
       api-key: ${OPENAI_API_KEY:not-needed}
     vectorstore:
       qdrant:
@@ -41,12 +43,28 @@ spring:
         initializeSchema: true
 
 kb:
+  # --- Стратегия Parent-Child Chunking
+  parent-chunk-size: 1024  # Размер большого куска для контекста LLM (в токенах)
+  child-chunk-size: 256    # Размер маленького куска для точного векторного поиска
   chunk-size: 512
-  chunk-overlap: 50
+  chunk-overlap: 50        # Перекрытие чанков
 
-  similarity-threshold: ${SIMILARITY_THRESHOLD:0.15}
-  max-search-results: 10
+  # --- Параметры поиска ---
+  similarity-threshold: ${SIMILARITY_THRESHOLD:0.35}
+  max-search-results: 128          # Итоговое количество родителей, отдаваемых модели (N)
+  retrieval-multiplier: 10         # Во сколько раз больше детей искать (10 * 128 = 1280 детей)
+
+  # --- Ограничения ---
+  max-file-size-mb: 50
   allowed-source-types: file,web,manual
+
+  # --- Настройки LLM Reranker ---
+  reranker:
+    enabled: true
+    # Должно совпадать с spring.ai.openai.chat.options.model
+    model: "qwen3-reranker-4b-llama_cpp"
+    # Максимум документов для оценки за один запрос к LLM (защита от перегрузки контекста)
+    max-docs-to-rerank: 10
 
 logging:
   level:
