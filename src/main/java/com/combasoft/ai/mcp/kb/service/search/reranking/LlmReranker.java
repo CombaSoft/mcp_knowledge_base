@@ -1,4 +1,4 @@
-package com.combasoft.ai.mcp.kb.service.reranking;
+package com.combasoft.ai.mcp.kb.service.search.reranking;
 
 import com.combasoft.ai.mcp.kb.config.KbConfig;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -49,7 +49,7 @@ public class LlmReranker implements Reranker {
                 .mapToObj(i -> String.format("[%d] %s", i, docsToRerank.get(i)))
                 .collect(Collectors.joining("\n"));
 
-        // 🔑 ПРОФЕССИОНАЛЬНЫЙ ПРОМПТ ДЛЯ 4B МОДЕЛИ
+        // ПРОМПТ ДЛЯ 4B МОДЕЛИ
         String systemPrompt = """
                 You are a strict, deterministic search relevance evaluation engine. 
                 Your ONLY output must be a valid JSON array. 
@@ -92,7 +92,7 @@ public class LlmReranker implements Reranker {
                 throw new IllegalStateException("LLM returned empty response");
             }
 
-            // 🔑 Надежный парсер: вырезаем всё, кроме содержимого квадратных скобок
+            // Вырезаем всё, кроме содержимого квадратных скобок
             // Это страховка на случай, если модель всё же добавит ```json ... ```
             Pattern pattern = Pattern.compile("\\[.*\\]", Pattern.DOTALL);
             Matcher matcher = pattern.matcher(rawResponse);

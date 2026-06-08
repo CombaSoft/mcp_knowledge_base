@@ -2,14 +2,14 @@ package com.combasoft.ai.mcp.kb.mcp;
 
 
 import com.combasoft.ai.mcp.kb.parser.DocumentParserFactory;
-import com.combasoft.ai.mcp.kb.service.AsyncSearchService;
-import com.combasoft.ai.mcp.kb.service.SearchProgressTracker;
+import com.combasoft.ai.mcp.kb.service.search.AsyncSearchService;
+import com.combasoft.ai.mcp.kb.service.search.SearchProgressTracker;
 import com.combasoft.ai.mcp.kb.service.ingest.AsyncIngestService;
 import com.combasoft.ai.mcp.kb.service.ingest.IngestionProgressTracker;
 import com.combasoft.ai.mcp.kb.service.ingest.IngestionTask;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
-import com.combasoft.ai.mcp.kb.service.SearchService;
+import com.combasoft.ai.mcp.kb.service.search.SearchService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -65,7 +65,11 @@ public class KbMcpTools {
         }
     }
 
-    @McpTool(description = "Checks status of an ingestion task. Returns progress % and status (QUEUED, COMPLETED, FAILED).")
+    @McpTool(description = "Checks status of an ingestion task. Returns progress % and " +
+            "status (QUEUED, PARSING, CHUNKING, EMBEDDING,)." +
+            "CRITICAL RULE: If the status is one of 'QUEUED', 'PARSING', 'CHUNKING', 'EMBEDDING', DO NOT call this tool again immediately. " +
+            "Instead, reply to the user with: 'The file ingestion is still processing (X% done). I will wait for your command to check again.' " +
+            "Only call this tool again when the user explicitly asks you to check the status.")
     public String getIngestTaskStatus(@McpToolParam(description = "Task ID received from ingest tool") String taskId) {
         IngestionTask task = ingestionProgressTracker.getTask(taskId);
         if (task == null) return "Task not found: " + taskId;

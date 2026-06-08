@@ -17,10 +17,7 @@ import java.util.*;
 public class IngestService {
 
     private static final Logger log = LoggerFactory.getLogger(IngestService.class);
-    private static final List<Character> DEFAULT_PUNCTUATION_MARKS = List.of('.', '?', '!', '\n');
 
-    // Безопасный лимит в символах (примерно 750-1000 токенов, безопасно для любой модели эмбеддингов)
-    private static final int MAX_SAFE_CHAR_LENGTH = 3000;
 
     private final VectorStore vectorStore;
     private final KbConfig kbConfig;
@@ -73,26 +70,29 @@ public class IngestService {
 
         // 🔑 Используем наш надежный кастомный сплиттер
         // Parent: ~2000 символов (безопасно ~500-600 токенов), overlap 200
-        List<Document> parents = customSplitter.splitMy(content, kbConfig.getParentChunkSize(), 200, meta);
+        List<Document> parents = customSplitter.splitMy(content, kbConfig.getParentChunkSize(), kbConfig.getChildChunkSize(), meta);
 
         for (Document parent : parents) {
             String parentId = parent.getId();
             String parentText = parent.getText();
 
+            // 1. СОХРАНЯЕМ РОДИТЕЛЯ в Qdrant
+            Map<String, Object> parentMeta = new HashMap<>(meta);
+            parentMeta.put("parent_id", parentId);
+            parentMeta.put("is_parent", "true");
+            parentMeta.put("chunk_index", allDocuments.size());
+            allDocuments.add(new Document(parentId, parentText, parentMeta));
+
+            // 2. СОЗДАЕМ И СОХРАНЯЕМ ДЕТЕЙ
             // Child: ~500 символов (безопасно ~120-150 токенов), overlap 50
-            List<Document> children = customSplitter.splitMy(parentText, kbConfig.getChildChunkSize(), 50, meta);
+            List<Document> children = customSplitter.splitMy(parentText, kbConfig.getChildChunkSize(), kbConfig.getChunkOverlap(), meta);
 
             for (Document child : children) {
                 // Внутри цикла создания children в IngestService.java
                 Map<String, Object> childMeta = new HashMap<>(meta);
                 childMeta.put("parent_id", parentId);
-
-                // 🔑 ИЗМЕНЕНИЕ: Используем строку "false" вместо булевого false
                 childMeta.put("is_parent", "false");
-
-                childMeta.put("parent_text", parentText);
                 childMeta.put("chunk_index", allDocuments.size());
-
                 allDocuments.add(new Document(UUID.randomUUID().toString(), child.getText(), childMeta));
             }
         }

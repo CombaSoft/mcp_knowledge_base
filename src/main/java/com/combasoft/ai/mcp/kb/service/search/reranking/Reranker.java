@@ -1,4 +1,4 @@
-package com.combasoft.ai.mcp.kb.service.reranking;
+package com.combasoft.ai.mcp.kb.service.search.reranking;
 
 import java.util.List;
 

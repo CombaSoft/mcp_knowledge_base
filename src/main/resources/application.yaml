@@ -44,8 +44,8 @@ spring:
 
 kb:
   # --- Стратегия Parent-Child Chunking
-  parent-chunk-size: 1024  # Размер большого куска для контекста LLM (в токенах)
-  child-chunk-size: 256    # Размер маленького куска для точного векторного поиска
+  parent-chunk-size: 4096  # Размер большого куска для контекста LLM
+  child-chunk-size: 512    # Размер маленького куска для точного векторного поиска
   chunk-size: 512
   chunk-overlap: 50        # Перекрытие чанков
 
@@ -66,7 +66,11 @@ kb:
     # Максимум документов для оценки за один запрос к LLM (защита от перегрузки контекста)
     max-docs-to-rerank: 10
 
+
 logging:
+  file:
+    path: mcp-rag-logs
+    name:  mcp-rag-server.log
   level:
     org.springframework.web.client: DEBUG
     org.springframework.http: DEBUG

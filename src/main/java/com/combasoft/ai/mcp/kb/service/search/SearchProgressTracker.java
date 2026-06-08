@@ -1,4 +1,4 @@
-package com.combasoft.ai.mcp.kb.service;
+package com.combasoft.ai.mcp.kb.service.search;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

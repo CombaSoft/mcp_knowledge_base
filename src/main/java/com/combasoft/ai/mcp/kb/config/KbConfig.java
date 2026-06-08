@@ -9,8 +9,8 @@ import java.util.List;
 @ConfigurationProperties(prefix = "kb")
 public class KbConfig {
 
-    private int parentChunkSize = 800;
-    private int childChunkSize = 200;
+    private int parentChunkSize = 4096;
+    private int childChunkSize = 512;
     private int chunkSize = 512;
     private int chunkOverlap = 50;
     private double similarityThreshold = 0.35;

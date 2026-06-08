@@ -1,7 +1,7 @@
-package com.combasoft.ai.mcp.kb.service;
+package com.combasoft.ai.mcp.kb.service.search;
 
 import com.combasoft.ai.mcp.kb.config.KbConfig;
-import com.combasoft.ai.mcp.kb.service.reranking.Reranker;
+import com.combasoft.ai.mcp.kb.service.search.reranking.Reranker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -59,15 +59,6 @@ public class SearchService {
                 .filterExpression(filterExpr)
                 .build();
 
-        /*
-        request = SearchRequest.builder()
-                .query(query)
-                .topK(limit > 0 ? limit : kbConfig.getMaxSearchResults())
-                .similarityThreshold(kbConfig.getSimilarityThreshold())
-                .build();
-
-
-         */
         log.info("📡 Searching CHILDREN: query='{}', topK={}", query, childTopK);
         List<Document> children = vectorStore.similaritySearch(request);
 
