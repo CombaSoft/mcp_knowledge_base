@@ -21,12 +21,12 @@ spring:
     openai:
       # 🔑 Отключаем чат, чтобы избежать ошибки авто-конфигурации
       chat:
-        enabled: false
-        base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:1234}
+        enabled: true
+        base-url: ${OPENAI_RERANKING_BASE_URL:http://127.0.0.1:1234}
       # Включаем эмбеддинги (по умолчанию true, но явно укажем)
       embedding:
         enabled: true
-        base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:1234}
+        base-url: ${OPENAI_EMBEDDING_BASE_URL:http://127.0.0.1:8085}
         model: ${EMBEDDING_MODEL:text-embedding-embeddinggemma-300m-qat}
         options:
           dimensions: ${EMBEDDING_DIMENSIONS:768}
@@ -50,7 +50,8 @@ kb:
   chunk-overlap: 50        # Перекрытие чанков
 
   # --- Параметры поиска ---
-  similarity-threshold: ${SIMILARITY_THRESHOLD:0.35}
+  vector-similarity-threshold: ${VECTOR_SIMILARITY_THRESHOLD:0.45}
+  rerank-similarity-threshold: ${RERANK_TOP_N_RESULTS:3}
   max-search-results: 128          # Итоговое количество родителей, отдаваемых модели (N)
   retrieval-multiplier: 10         # Во сколько раз больше детей искать (10 * 128 = 1280 детей)
 
@@ -62,9 +63,9 @@ kb:
   reranker:
     enabled: true
     # Должно совпадать с spring.ai.openai.chat.options.model
-    model: "qwen3-reranker-4b-llama_cpp"
+    model: "bge-reranker-v2-m3-Q8_0.gguf"
     # Максимум документов для оценки за один запрос к LLM (защита от перегрузки контекста)
-    max-docs-to-rerank: 10
+    max-docs-to-rerank: 50
 
 
 logging:

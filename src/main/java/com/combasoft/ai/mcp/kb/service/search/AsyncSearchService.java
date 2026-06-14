@@ -39,7 +39,7 @@ public class AsyncSearchService {
                               QdrantClient qdrantClient,
                               QdrantConfig qdrantConfig,
                               KbConfig kbConfig,
-                              Reranker reranker,
+                              @Qualifier("llamaReranker") Reranker reranker,
                               SearchProgressTracker tracker,
                               @Lazy AsyncSearchService asyncSearchService) {
         this.vectorStore = vectorStore;
@@ -78,6 +78,8 @@ public class AsyncSearchService {
             int topK = (limit > 0) ? limit : kbConfig.getMaxSearchResults();
             int multiplier = kbConfig.getRetrievalMultiplier();
             int childTopK = topK * multiplier;
+            double vectorSimilarityThreshold = kbConfig.getVectorSimilarityThreshold();
+            int topNrerankingResults = kbConfig.getRerankTopNResults();
 
             List<String> conditions = new ArrayList<>();
             conditions.add("is_parent == 'false'");
@@ -91,7 +93,7 @@ public class AsyncSearchService {
             SearchRequest request = SearchRequest.builder()
                     .query(query)
                     .topK(childTopK)
-                    .similarityThreshold(kbConfig.getSimilarityThreshold())
+                    .similarityThreshold(vectorSimilarityThreshold)
                     .filterExpression(filterExpr)
                     .build();
 
@@ -101,77 +103,113 @@ public class AsyncSearchService {
                 return;
             }
 
-            // ЭТАП 2: Дедупликация и извлечение ID родителей (50%)
-            tracker.updateProgress(taskId, 50, "Группировка по родителям...");
+            List<Document> sortedChildren = children.stream()
+                    .filter(r -> Objects.nonNull(r.getScore()))
+                    .sorted(Comparator.comparing(Document::getScore).reversed())
+                    .toList();
 
-            // Используем LinkedHashMap, чтобы сохранить порядок релевантности (первый найденный ребенок = лучший)
-            LinkedHashMap<String, Document> bestChildPerParent = children.stream()
-                    .collect(Collectors.toMap(
-                            doc -> (String) doc.getMetadata().get("parent_id"),
-                            doc -> doc,
-                            (existing, replacement) -> existing, // Оставляем первого (самого релевантного)
-                            LinkedHashMap::new
-                    ));
+            Map<Document, Double> childrenScores = new HashMap<>();
 
-            LinkedHashSet<String> parentIds = new LinkedHashSet<>(bestChildPerParent.keySet());
-            List<String> topParentIds = parentIds.stream().toList();
+            // ЭТАП 2: LLM Реранкинг (30%)
+            if (useReranking) {
 
-            // ЭТАП 3: Пакетная загрузка родителей из Qdrant (70%)
-            tracker.updateProgress(taskId, 70, "Загрузка полного контекста родителей...");
-            List<Document> parents = fetchParentsByIds(new LinkedHashSet<>(topParentIds));
+                tracker.updateProgress(taskId, 30, "Запуск LLM реранкинга...");
 
-            Map<String, Document> parentMap = parents.stream()
-                    .collect(Collectors.toMap(doc -> (String) doc.getMetadata().get("parent_id"), doc -> doc));
+                int limitToReranking = Math.min(sortedChildren.size(), kbConfig.getReranker().maxDocsToRerank());
+
+                // Get top 50 for reranking
+                List<Document> childrenToRerank = sortedChildren.stream()
+                        .limit(limitToReranking)
+                        .toList();
+
+                List<String> documentsToRerank = childrenToRerank.stream().map(Document::getText).toList();
+                List<Double> rerankScores = reranker.score(query, documentsToRerank, taskId);
+                log.info("✅ taskId: {} , rerankScores {}", taskId, rerankScores);
+
+                boolean hasError = rerankScores.stream().anyMatch(d -> d > 1.0);
+
+                if (!hasError) {
+
+
+                    for (int i = 0; i < rerankScores.size(); i++) {
+                        childrenScores.put(childrenToRerank.get(i), rerankScores.get(i));
+                    }
+
+                } else {
+                    tracker.updateProgress(taskId, 85, "Ошибка при выполнении реранкинга. Используем исходные оценки векторов...");
+                }
+
+            } else {
+                tracker.updateProgress(taskId, 85, "Реранкинг пропущен. Используем исходные оценки векторов...");
+            }
+
+            // ЭТАП 3: Дедупликация и извлечение ID родителей (90%)
+            tracker.updateProgress(taskId, 90, "Дедупликация и извлечение ID родителей (90%)...");
+
+            boolean truncateByReankResults = !childrenScores.isEmpty();
+
+            if (childrenScores.isEmpty()) {
+                for(Document document: sortedChildren) {
+                    childrenScores.put(document, document.getScore());
+                }
+            }
+
+            Map<String, Double> parentMaxScores = new HashMap<>();
+
+            for (Map.Entry<Document, Double> entry : childrenScores.entrySet()) {
+                String parentId = (String)entry.getKey().getMetadata().get("parent_id"); // Получаем ID родителя
+                Double score = entry.getValue();                // Получаем скор чайлда
+
+                // merge делает следующее:
+                // 1. Если parentId еще нет в мапе, он добавляет его со значением score.
+                // 2. Если parentId уже есть, он применяет функцию Math.max к старому и новому значению.
+                parentMaxScores.merge(parentId, score, Math::max);
+            }
+
+            if (truncateByReankResults) {
+
+                parentMaxScores = parentMaxScores.entrySet().stream()
+                        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                        .limit(topNrerankingResults)
+                        .collect(Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (e1, e2) -> e1,
+                                LinkedHashMap::new
+                        ));
+            }
+
+            // ЭТАП 4: Пакетная загрузка родителей из Qdrant (95%)
+            tracker.updateProgress(taskId, 95, "Загрузка полного контекста родителей...");
+
+            List<Document> parents = fetchParentsByIds(parentMaxScores.keySet().stream().toList());
+
+            Map<String, Double> parentMaxScoresFinal = parentMaxScores;
 
             // Собираем финальные результаты, используя текст родителя, но оценку (score) лучшего ребенка
-            List<SearchService.SearchResult> initialResults = topParentIds.stream()
-                    .map(id -> {
-                        Document parentDoc = parentMap.get(id);
-                        Document childDoc = bestChildPerParent.get(id);
-                        if (parentDoc == null || childDoc == null) return null;
+            List<SearchService.SearchResult> initialResults = parents.stream()
+                    .map(document -> {
+
+                        if (document == null) return null;
 
                         return new SearchService.SearchResult(
-                                parentDoc.getId(),
-                                parentDoc.getText(), // 🔑 БЕРЕМ ТЕКСТ ИЗ РОДИТЕЛЯ
-                                childDoc.getScore(), // 🔑 БЕРЕМ ОЦЕНКУ ИЗ РЕБЕНКА
-                                parentDoc.getMetadata()
+                                document.getId(),
+                                document.getText(), // 🔑 БЕРЕМ ТЕКСТ ИЗ РОДИТЕЛЯ
+                                parentMaxScoresFinal.get(document.getId()), // 🔑 БЕРЕМ ОЦЕНКУ ИЗ РЕБЕНКА
+                                document.getMetadata()
                         );
                     })
                     .filter(Objects::nonNull)
                     .toList();
 
-            List<SearchService.SearchResult> finalResults;
-
-            finalResults = initialResults.stream()
+            List<SearchService.SearchResult> finalResults = initialResults.stream()
                     .sorted(Comparator.comparing(SearchService.SearchResult::score).reversed())
                     .limit(topK)
                     .toList();
 
-            // ЭТАП 4: LLM Реранкинг (90%)
-            if (useReranking) {
-                tracker.updateProgress(taskId, 90, "Запуск LLM реранкинга...");
-                List<String> parentTexts = finalResults.stream().map(SearchService.SearchResult::content).toList();
-                List<Double> rerankScores = reranker.score(query, parentTexts);
-
-                List<SearchService.SearchResult> rerankedResults = new ArrayList<>();
-                for (int i = 0; i < finalResults.size(); i++) {
-                    rerankedResults.add(new SearchService.SearchResult(
-                            finalResults.get(i).id(),
-                            finalResults.get(i).content(),
-                            rerankScores.get(i),
-                            finalResults.get(i).metadata()
-                    ));
-                }
-                finalResults = rerankedResults.stream()
-                        .sorted(Comparator.comparing(SearchService.SearchResult::score).reversed())
-                        .toList();
-            } else {
-                tracker.updateProgress(taskId, 90, "Реранкинг пропущен, сортировка по векторам...");
-            }
-
-            tracker.updateProgress(taskId, 95, "Формирование ответа...");
+            tracker.updateProgress(taskId, 99, "Формирование ответа...");
             tracker.completeTask(taskId, finalResults);
-            log.info("✅ Async search completed for taskId: {}", taskId);
+            log.info("✅ Async search completed for taskId: {} , count of results {}", taskId, finalResults.size());
 
         } catch (Exception e) {
             log.error("❌ Async search failed for taskId: {}", taskId, e);
@@ -183,7 +221,7 @@ public class AsyncSearchService {
     /**
      * Пакетная загрузка родительских документов по их ID из Qdrant
      */
-    private List<Document> fetchParentsByIds(LinkedHashSet<String> parentIds) {
+    private List<Document> fetchParentsByIds(List<String> parentIds) {
         if (parentIds == null || parentIds.isEmpty()) {
             return List.of();
         }

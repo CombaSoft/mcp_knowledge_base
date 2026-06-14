@@ -81,7 +81,7 @@ public class KbMcpTools {
     public String startKnowledgeSearch(
             @McpToolParam(description = "The user's search query") String query,
             @McpToolParam(description = "Maximum number of results (default 5)") Integer limit,
-            @McpToolParam(description = "Use LLM reranking for higher accuracy. Set to FALSE for faster, CPU-friendly search (default: flase)", required = false) Boolean useReranking) {
+            @McpToolParam(description = "Use LLM reranking for higher accuracy. Set to FALSE for faster, CPU-friendly search (default: flase). If enabled, only 5 top results passed to result", required = false) Boolean useReranking) {
 
         int topK = (limit != null && limit > 0) ? limit : 5;
         // По умолчанию выключаем реранкинг, если агент явно не попросил обратного

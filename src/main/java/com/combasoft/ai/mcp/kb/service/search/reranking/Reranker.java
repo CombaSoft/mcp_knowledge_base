@@ -4,5 +4,5 @@ import java.util.List;
 
 public interface Reranker {
 
-    List<Double> score(String query, List<String> documents);
+    List<Double> score(String query, List<String> documents, String taskId);
 }

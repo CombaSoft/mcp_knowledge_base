@@ -24,7 +24,7 @@ public class SearchService {
 
     public SearchService(@Qualifier("kbVectorStore") VectorStore vectorStore,
                          KbConfig kbConfig,
-                         Reranker reranker) {
+                         @Qualifier("llamaReranker") Reranker reranker) {
         this.vectorStore = vectorStore;
         this.kbConfig = kbConfig;
         this.reranker = reranker;
@@ -55,7 +55,7 @@ public class SearchService {
         SearchRequest request = SearchRequest.builder()
                 .query(query)
                 .topK(childTopK)
-                .similarityThreshold(kbConfig.getSimilarityThreshold())
+                .similarityThreshold(kbConfig.getVectorSimilarityThreshold())
                 .filterExpression(filterExpr)
                 .build();
 
@@ -99,7 +99,7 @@ public class SearchService {
 
         // 🔑 Применяем LLM Reranking
         List<String> parentTexts = initialResults.stream().map(SearchResult::content).toList();
-        List<Double> rerankScores = reranker.score(query, parentTexts);
+        List<Double> rerankScores = reranker.score(query, parentTexts, "none");
 
         List<SearchResult> rerankedResults = new ArrayList<>();
         for (int i = 0; i < initialResults.size(); i++) {

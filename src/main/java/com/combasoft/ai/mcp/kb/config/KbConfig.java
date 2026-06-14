@@ -13,7 +13,8 @@ public class KbConfig {
     private int childChunkSize = 512;
     private int chunkSize = 512;
     private int chunkOverlap = 50;
-    private double similarityThreshold = 0.35;
+    private double vectorSimilarityThreshold = 0.45;
+    private int rerankTopNResults = 3;
     private int maxSearchResults = 128;
     private int retrievalMultiplier = 10;
     private List<String> allowedSourceTypes = List.of("file", "web", "manual");
@@ -52,12 +53,14 @@ public class KbConfig {
     public void setChunkSize(int chunkSize) { this.chunkSize = chunkSize; }
     public int getChunkOverlap() { return chunkOverlap; }
     public void setChunkOverlap(int chunkOverlap) { this.chunkOverlap = chunkOverlap; }
-    public double getSimilarityThreshold() { return similarityThreshold; }
-    public void setSimilarityThreshold(double similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+    public double getVectorSimilarityThreshold() { return vectorSimilarityThreshold; }
+    public void setVectorSimilarityThreshold(double vectorSimilarityThreshold) { this.vectorSimilarityThreshold = vectorSimilarityThreshold; }
     public int getMaxSearchResults() { return maxSearchResults; }
     public void setMaxSearchResults(int maxSearchResults) { this.maxSearchResults = maxSearchResults; }
     public List<String> getAllowedSourceTypes() { return allowedSourceTypes; }
     public void setAllowedSourceTypes(List<String> allowedSourceTypes) { this.allowedSourceTypes = allowedSourceTypes; }
     public int getMaxFileSizeMb() { return maxFileSizeMb; }
     public void setMaxFileSizeMb(int maxFileSizeMb) { this.maxFileSizeMb = maxFileSizeMb; }
+    public int getRerankTopNResults() { return rerankTopNResults; }
+    public void setRerankTopNResults(int rerankTopNResults) { this.rerankTopNResults = rerankTopNResults; }
 }

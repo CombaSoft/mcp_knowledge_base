@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+// Этот класс останется для вариантов вида LLM as a judge
+
 @Service
 public class LlmReranker implements Reranker {
 
@@ -37,7 +39,7 @@ public class LlmReranker implements Reranker {
     }
 
     @Override
-    public List<Double> score(String query, List<String> documents) {
+    public List<Double> score(String query, List<String> documents, String taskId) {
         if (!kbConfig.getReranker().enabled() || documents == null || documents.isEmpty()) {
             return documents.stream().map(d -> 0.5).toList();
         }
