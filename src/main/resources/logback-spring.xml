@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <!-- Путь к директории для логов. "." означает текущую рабочую директорию (где лежит jar) -->
-    <property name="LOG_PATH" value="${LOG_PATH:-.}" />
-    <property name="LOG_FILE" value="${LOG_PATH}/mcp-rag-server.log" />
+    <property name="LOG_FILE" value="./mcp-rag-server.log" />
 
     <!-- 🔒 FILE APPENDER: Все логи идут только сюда -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>kb-service.log</file>
+        <file>${LOG_FILE}</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>kb-service.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>

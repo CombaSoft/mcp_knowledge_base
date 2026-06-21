@@ -55,6 +55,12 @@
             <artifactId>spring-ai-starter-vector-store-qdrant</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.qdrant</groupId>
+            <artifactId>client</artifactId>
+            <version>1.9.0</version> <!-- Актуальная стабильная версия -->
+        </dependency>
+
         <!-- PDF Parsing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

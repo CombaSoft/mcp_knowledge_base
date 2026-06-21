@@ -2,7 +2,7 @@ package com.combasoft.ai.mcp.kb.web;
 
 
 import com.combasoft.ai.mcp.kb.service.ingest.AsyncIngestService;
-import com.combasoft.ai.mcp.kb.service.SearchService;
+import com.combasoft.ai.mcp.kb.service.search.SearchService;
 import com.combasoft.ai.mcp.kb.service.ingest.IngestionProgressTracker;
 import com.combasoft.ai.mcp.kb.service.ingest.IngestionTask;
 import org.springframework.http.ResponseEntity;
@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 
 @RestController
 @RequestMapping("/api/v1")

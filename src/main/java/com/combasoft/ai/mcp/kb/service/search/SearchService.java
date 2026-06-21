@@ -1,7 +1,7 @@
-package com.combasoft.ai.mcp.kb.service;
+package com.combasoft.ai.mcp.kb.service.search;
 
 import com.combasoft.ai.mcp.kb.config.KbConfig;
-import com.combasoft.ai.mcp.kb.service.reranking.Reranker;
+import com.combasoft.ai.mcp.kb.service.search.reranking.Reranker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -24,7 +24,7 @@ public class SearchService {
 
     public SearchService(@Qualifier("kbVectorStore") VectorStore vectorStore,
                          KbConfig kbConfig,
-                         Reranker reranker) {
+                         @Qualifier("llamaReranker") Reranker reranker) {
         this.vectorStore = vectorStore;
         this.kbConfig = kbConfig;
         this.reranker = reranker;
@@ -55,19 +55,10 @@ public class SearchService {
         SearchRequest request = SearchRequest.builder()
                 .query(query)
                 .topK(childTopK)
-                .similarityThreshold(kbConfig.getSimilarityThreshold())
+                .similarityThreshold(kbConfig.getVectorSimilarityThreshold())
                 .filterExpression(filterExpr)
                 .build();
 
-        /*
-        request = SearchRequest.builder()
-                .query(query)
-                .topK(limit > 0 ? limit : kbConfig.getMaxSearchResults())
-                .similarityThreshold(kbConfig.getSimilarityThreshold())
-                .build();
-
-
-         */
         log.info("📡 Searching CHILDREN: query='{}', topK={}", query, childTopK);
         List<Document> children = vectorStore.similaritySearch(request);
 
@@ -108,7 +99,7 @@ public class SearchService {
 
         // 🔑 Применяем LLM Reranking
         List<String> parentTexts = initialResults.stream().map(SearchResult::content).toList();
-        List<Double> rerankScores = reranker.score(query, parentTexts);
+        List<Double> rerankScores = reranker.score(query, parentTexts, "none");
 
         List<SearchResult> rerankedResults = new ArrayList<>();
         for (int i = 0; i < initialResults.size(); i++) {
