@@ -61,10 +61,7 @@ services:
     
     ports:
       - "8085:8080"
-      
-    environment:
-      - LLAMA_ARG_POOLING=rank
-      
+            
     volumes:
       - llama_models:/models:rw
     command: >
@@ -74,7 +71,7 @@ services:
       --ctx-size 2048
       --batch-size 8192
       --ubatch-size 2048
-      --embedding 
+      --embeddings 
       --flash-attn on
       
     deploy:

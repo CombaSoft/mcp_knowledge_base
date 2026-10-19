@@ -23,16 +23,16 @@ public class QdrantConfig {
     @Value("${spring.ai.vectorstore.qdrant.collection-name:kb_documents}")
     private String collectionName;
 
-    @Value("${spring.ai.openai.embedding.dimensions:1024}")
+    @Value("${spring.ai.openai.embedding.dimensions:768}")
     private int dimensions;
 
-    @Value("${spring.ai.openai.embedding.model:text-embedding-qwen3-embedding-0.6b}")
+    @Value("${spring.ai.openai.embedding.model:text-embedding-embeddinggemma-300m-qat}")
     String model;
 
     @Value("${spring.ai.openai.api-key:not-needed}")
     String apiKey;
 
-    @Value("${spring.ai.openai.embedding.base-url:http://127.0.0.1:1234}")
+    @Value("${spring.ai.openai.embedding.base-url:http://127.0.0.1:8085}")
     String embeddingBaseUrl;
 
     public String getCollectionName() {
